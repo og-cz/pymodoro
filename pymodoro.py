@@ -1,36 +1,47 @@
 import threading
 import time
+import math
 
 c = threading.Condition()
 
-TIMER = None
-WORK_MIN = 25
-SHORT_BREAK_MIN = 5
-LONG_BREAK_MIN = 20
-REPS = 0
-STATE = 1
 SECONDS = 0
 
+# states of pymodoro
+STATE = 1
 RUNNING = 1
 PAUSED = 2
 STOPPED = 3
 
 
 def countdown_timer():
-    global SECONDS
-    while SECONDS > 0:
-        if STATE == RUNNING:
-            mins, secs = divmod(SECONDS, 60)
-            print(f"{mins}:{secs}")
-            time.sleep(1)
-            SECONDS -= 1
-        elif STATE == PAUSED:
-            with c:
+    global SECONDS, STATE
+    start_time = time.perf_counter()
+    end_time = start_time + SECONDS
+
+    while True:
+        with c:
+            if STATE == PAUSED:
                 c.wait()
-        elif STATE == STOPPED:
-            print("stopped")
+            if STATE == STOPPED:
+                print("stopped")
+                break
+
+        remaining = end_time - time.perf_counter()
+        if remaining <= 0:
+            print("time's up!")
+            with c:
+                SECONDS = 0
+                STATE = STOPPED
+                c.notify_all()
             break
-    print("countdown finished")
+        secs_display = int(math.ceil(remaining))
+        mins, secs = divmod(int(remaining), 60)
+        print(f"{mins}:{secs:02d}")
+
+        sleep_time = remaining - (secs_display - 1)
+        if sleep_time <= 0:
+            sleep_time = 0.05
+        time.sleep(sleep_time)
 
 
 class Process_one(threading.Thread):
@@ -43,7 +54,7 @@ class Process_two(threading.Thread):
         global STATE
         while SECONDS > 0 and STATE != 3:
             res = input(
-                "press Enter+C to Continue, Enter+S to Stop, Enter+X to exit: "
+                "press EnterC to Continue, EnterS to Stop, EnterX to exit: "
             ).upper()
             with c:
                 if res == "C":
@@ -54,6 +65,22 @@ class Process_two(threading.Thread):
                 elif res == "X":
                     STATE = STOPPED
                     c.notify()
+        while True:
+            res = input(
+                "press EnterC to Continue, EnterS to Stop, EnterX to exit: "
+            ).upper()
+            with c:
+                if res == "C":
+                    STATE = RUNNING
+                    c.notify_all()
+                elif res == "S":
+                    STATE = PAUSED
+                elif res == "X":
+                    STATE = STOPPED
+                    c.notify_all()
+                    break
+            if STATE == STOPPED:
+                break
 
 
 if __name__ == "__main__":
